@@ -1,2 +1,2 @@
 # CTBal
-ct ratio plugin
+ct ratio plugin, standalone from jb repo by request
