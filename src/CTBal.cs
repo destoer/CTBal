@@ -17,9 +17,9 @@ using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using System.Text.Json.Serialization;
 public class BalConfig : BasePluginConfig
 {
-    // ratio of t to CT
-    [JsonPropertyName("bal_ct")]
-    public int bal_ct { get; set; } = 0;
+    // how many cts for every t
+    [JsonPropertyName("ratio")]
+    public double ratio {get; set;} = 0.5;
 }
 
 
@@ -96,16 +96,35 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
             return;
         }
 
+        if(old_team == team)
+        {
+            //Server.PrintToChatAll("no switch");
+            invoke.play_sound("sounds/ui/counter_beep.vsnd");
+            return;
+        }
+
+
+        double ct_count = Lib.ct_count();
+        double t_count = Lib.t_count();
+        double ratio = Config.ratio;
+
+        bool empty = ct_count == 0 || t_count == 0 || ratio == 0.0;
+
         switch(team)
         {
+            // T  CT
+            // numbers: 1, 1
+            // raito:   5, 4
+            //  T's for every ct
+            // 5 < 4 1?
+
             case Lib.TEAM_CT:
             {
-                int ct_count = Lib.ct_count();
-                int t_count = Lib.t_count();
+                //Server.PrintToChatAll($"({ct_count}:{t_count}) {ct_count} < {t_count} * {ratio} = {t_count * ratio}");
 
                 // check CT aint full 
                 // i.e at a suitable raito or either team is empty
-                if((ct_count * Config.bal_ct) < t_count || ct_count == 0 || t_count == 0)
+                if(ct_count < (t_count * ratio) || empty)
                 {
                     invoke.SwitchTeam(CsTeam.CounterTerrorist);
                 }
@@ -114,7 +133,7 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
                 else
                 {
                     invoke.SwitchTeam(CsTeam.Terrorist);
-                    invoke.announce(TEAM_PREFIX,$"Sorry, CT has too many players {Config.bal_ct}:1 ratio maximum");
+                    invoke.announce(TEAM_PREFIX,$"Sorry, CT has too many players {ratio} CT for every T");
                     invoke.play_sound("sounds/ui/counter_beep.vsnd");
 
                     // update to actual switch
@@ -126,7 +145,25 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
 
             case Lib.TEAM_T:
             {
-                invoke.SwitchTeam(CsTeam.Terrorist);
+                //Server.PrintToChatAll($"({ct_count}:{t_count}) {t_count} < {ct_count} * { 1 / ratio} = {ct_count *  (1 / ratio)}");
+
+                // check T aint full 
+                // i.e at a suitable raito or either team is empty
+                if(t_count < (ct_count * ( 1 / ratio)) || empty)
+                {
+                    invoke.SwitchTeam(CsTeam.Terrorist);
+                }
+
+                // switch to CT
+                else
+                {
+                    invoke.SwitchTeam(CsTeam.CounterTerrorist);
+                    invoke.announce(TEAM_PREFIX,$"Sorry, T has too many players {ratio} T for every CT");
+                    invoke.play_sound("sounds/ui/counter_beep.vsnd");
+
+                    // update to actual switch
+                    team = Lib.TEAM_CT;
+                }
                 break;
             }
 
@@ -139,7 +176,6 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
 
             default:
             {
-                invoke.SwitchTeam(CsTeam.Terrorist);
                 invoke.announce(TEAM_PREFIX,"You cannot join that team");
                 invoke.play_sound("sounds/ui/counter_beep.vsnd");
                 break;
@@ -150,8 +186,9 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
 
         // team has changed between active
         // make sure the player cannot just switch teams in a spawn
-        if(old_team != team && Lib.active_team(old_team) && Lib.active_team(team))
+        if(Lib.active_team(old_team) && Lib.active_team(team))
         {
+            Server.ExecuteCommand("mp_autokick 0");
             invoke.slay();
 
             respawn_delay(invoke,1.0f);
