@@ -44,7 +44,7 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
     void register_commands()
     {
         // reg team hook
-        AddCommand("jointeam","boop",join_team);
+        AddCommandListener("jointeam",join_team);
     }
 
     static readonly String TEAM_PREFIX = $" {ChatColors.Green}[TEAM]: {ChatColors.White}";
@@ -67,18 +67,16 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
         AddTimer(delay,() => respawn_callback(player.slot()),CSTimer.TimerFlags.STOP_ON_MAPCHANGE);
     }
 
-    public void join_team(CCSPlayerController? invoke, CommandInfo command)
+    public HookResult join_team(CCSPlayerController? invoke, CommandInfo command)
     {
         if(invoke == null || !invoke.is_valid())
         {
-            return;
+            return HookResult.Continue;
         }
 
         if(command.ArgCount != 3)
         {
-            invoke.SwitchTeam(CsTeam.Terrorist);
-            invoke.announce(TEAM_PREFIX,"You cannot join that team");
-            return;
+            return HookResult.Continue;
         }
 
         CCSPlayerPawn? pawn = invoke.pawn(); 
@@ -93,14 +91,12 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
 
         if(!Int32.TryParse(command.ArgByIndex(1),out int team))
         {
-            return;
+            return HookResult.Continue;
         }
 
         if(old_team == team)
         {
-            //Server.PrintToChatAll("no switch");
-            invoke.play_sound("sounds/ui/counter_beep.vsnd");
-            return;
+            return HookResult.Continue;
         }
 
 
@@ -124,22 +120,13 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
 
                 // check CT aint full 
                 // i.e at a suitable raito or either team is empty
-                if(ct_count < (t_count * ratio) || empty)
+                if(ct_count >= (t_count * ratio) && !empty)
                 {
-                    invoke.SwitchTeam(CsTeam.CounterTerrorist);
-                }
-
-                // switch to T
-                else
-                {
-                    invoke.SwitchTeam(CsTeam.Terrorist);
                     invoke.announce(TEAM_PREFIX,$"Sorry, CT has too many players {ratio} CT for every T");
                     invoke.play_sound("sounds/ui/counter_beep.vsnd");
-
-                    // update to actual switch
-                    team = Lib.TEAM_T;
+                    return HookResult.Stop;
                 }
-                
+
                 break;
             }
 
@@ -149,49 +136,17 @@ public class BalPlugin : BasePlugin, IPluginConfig<BalConfig>
 
                 // check T aint full 
                 // i.e at a suitable raito or either team is empty
-                if(t_count < (ct_count * ( 1 / ratio)) || empty)
+                if(t_count >= (ct_count * ( 1 / ratio)) && !empty)
                 {
-                    invoke.SwitchTeam(CsTeam.Terrorist);
-                }
-
-                // switch to CT
-                else
-                {
-                    invoke.SwitchTeam(CsTeam.CounterTerrorist);
-                    invoke.announce(TEAM_PREFIX,$"Sorry, T has too many players {ratio} T for every CT");
+                    invoke.announce(TEAM_PREFIX,$"Sorry, T has too many players {1 / ratio} T for every CT");
                     invoke.play_sound("sounds/ui/counter_beep.vsnd");
-
-                    // update to actual switch
-                    team = Lib.TEAM_CT;
+                    return HookResult.Stop;
                 }
-                break;
-            }
 
-            // spec
-            case Lib.TEAM_SPEC:
-            {
-                invoke.SwitchTeam(CsTeam.Spectator);
-                break;
-            }
-
-            default:
-            {
-                invoke.announce(TEAM_PREFIX,"You cannot join that team");
-                invoke.play_sound("sounds/ui/counter_beep.vsnd");
                 break;
             }
         }
 
-        bool alive = invoke.is_valid_alive();
-
-        // team has changed between active
-        // make sure the player cannot just switch teams in a spawn
-        if(Lib.active_team(old_team) && Lib.active_team(team))
-        {
-            Server.ExecuteCommand("mp_autokick 0");
-            invoke.slay();
-
-            respawn_delay(invoke,1.0f);
-        }
+        return HookResult.Continue;
     }
 }
